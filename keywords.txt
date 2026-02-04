@@ -1,0 +1,29 @@
+#######################################
+# Datatypes (Classes) - Aparecem em Laranja
+#######################################
+OS	KEYWORD1
+Thread	KEYWORD1
+Mutex	KEYWORD1
+AtomicGuard	KEYWORD1
+
+#######################################
+# Methods and Functions - Aparecem em Azul
+#######################################
+init	KEYWORD2
+newThread	KEYWORD2
+sleep	KEYWORD2
+yield	KEYWORD2
+isCorrupted	KEYWORD2
+lock	KEYWORD2
+unlock	KEYWORD2
+enterCritical	KEYWORD2
+exitCritical	KEYWORD2
+getTicks	KEYWORD2
+
+#######################################
+# Constants (Defines)
+#######################################
+STACK_SIZE_SMALL	LITERAL1
+STACK_SIZE_MEDIUM	LITERAL1
+STACK_SIZE_LARGE	LITERAL1
+MAX_THREADS	LITERAL1
