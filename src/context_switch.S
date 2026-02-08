@@ -1,16 +1,20 @@
 #define __SFR_OFFSET 0
 #include <avr/io.h>
 
-.extern OS_saveStackPointer
-.extern OS_scheduler
-.extern OS_loadStackPointer
+.global OS_yield_asm
+.global __vector_11  ; TIMER1 COMPA no UNO/NANO
 
-.global TIMER1_COMPA_vect
+; Função chamada manualmente (Yield)
+OS_yield_asm:
+    rjmp SAVE_CONTEXT
 
-TIMER1_COMPA_vect:
-    ; --- SALVAR CONTEXTO ---
+; Interrupção do Timer (Preempção)
+__vector_11:
+SAVE_CONTEXT:
+    ; 1. Salvar Registradores
     push r0
-    in   r0, _SFR_IO_ADDR(SREG)
+    in   r0, SREG
+    cli
     push r0
     push r1
     clr  r1
@@ -45,12 +49,18 @@ TIMER1_COMPA_vect:
     push r30
     push r31
 
-    ; --- CHAMAR LÓGICA DO KERNEL ---
-    call OS_saveStackPointer
-    call OS_scheduler
-    call OS_loadStackPointer
+    ; 2. Passar SP atual para o C++
+    in   r24, SPL
+    in   r25, SPH
 
-    ; --- RESTAURAR CONTEXTO ---
+    ; 3. Chamar a função C++ que decide a troca
+    call OS_contextSwitch_Wrapper
+
+    ; 4. Receber novo SP do C++ 
+    out  SPL, r24
+    out  SPH, r25
+
+    ; 5. Restaurar Registradores
     pop  r31
     pop  r30
     pop  r29
@@ -83,6 +93,6 @@ TIMER1_COMPA_vect:
     pop  r2
     pop  r1
     pop  r0
-    out  _SFR_IO_ADDR(SREG), r0
+    out  SREG, r0
     pop  r0
     reti

@@ -6,20 +6,17 @@
 #define STACK_SIZE_SMALL 128
 #define STACK_SIZE_MEDIUM 256
 #define STACK_SIZE_LARGE 512
-#define TIME_SLICE 20
-#define THREAD_UNUSED  0
-#define THREAD_RUNNING 1
-#define THREAD_READY   2
-#define THREAD_SLEEP   3
-#define THREAD_BLOCKED 4
-#define MAX_THREADS 3
 
 #define THREAD_UNUSED  0
 #define THREAD_RUNNING 1
 #define THREAD_READY   2
 #define THREAD_SLEEP   3
 #define THREAD_BLOCKED 4
+
 #define MAX_THREADS 3
+
+extern "C" void OS_yield_asm(); 
+extern "C" void* OS_contextSwitch_Wrapper(void* oldSP);
 
 class OS;
 class Thread;
@@ -49,7 +46,7 @@ class Mutex {
 private:
     bool locked = false;
     int8_t owner_index = -1;
-    bool waiting_threads[MAX_THREADS] = {false};
+    uint8_t waiting_mask = 0;
 
 public:
     void lock();
@@ -64,17 +61,19 @@ class OS {
 
 private:
     static Thread threads[MAX_THREADS];
-    static uint8_t current_index;
-    static uint32_t sys_ticks;
-    static bool atomic_lock;
+    volatile static uint8_t current_index;
+    volatile static uint32_t sys_ticks;
+
+    static Thread* newThreadInternal(void (*func)(void), uint8_t *stack_mem, uint16_t size);
 
 public:
     static uint32_t getTicks();
     static inline Thread* getCurrentThread();
-    static Thread* newThread(void (*func)(void), uint16_t stack_size = STACK_SIZE_SMALL);
-    static void scheduler();
-    static void saveStackPointer();
-    static void loadStackPointer();
+
+    template <size_t N>
+    static Thread* newThread(void (*func)(void), uint8_t (&stack_buffer)[N]) {return newThreadInternal(func, stack_buffer, N);}
+    
+    static void* contextSwitch(void* oldSP);
     static void init();
     static void enterCritical();
     static void exitCritical();
@@ -83,10 +82,7 @@ public:
 class AtomicGuard {
 public:
     AtomicGuard() { OS::enterCritical(); }
-    ~AtomicGuard() { 
-      OS::exitCritical(); 
-      Thread::yield();
-    }
+    ~AtomicGuard() { OS::exitCritical(); }
 };
 
 #endif
