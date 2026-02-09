@@ -34,10 +34,18 @@ void Thread::init(uint8_t _id, void (*func)(void), uint8_t *stack_mem, uint16_t 
     stack_size = size;
     stack_mem[0] = 0xAA;
     uint8_t *sp = &stack_mem[size - 1];
-    uint16_t address = (uint16_t)func;
-    *sp-- = address & 0xFF;
-    *sp-- = (address >> 8) & 0xFF;
-    for (int i = 0; i < 33; i++) *sp-- = 0;
+
+    uint16_t exitAddress = (uint16_t)&OS::threadExit;
+    *sp-- = exitAddress & 0xFF;
+    *sp-- = (exitAddress >> 8) & 0xFF;
+
+
+    uint16_t funcAddress = (uint16_t)func;
+    *sp-- = funcAddress & 0xFF;
+    *sp-- = (funcAddress >> 8) & 0xFF;
+
+    *sp-- = 0x80;
+    for (int i = 0; i < 32; i++) *sp-- = 0;
     stack_pointer = sp;
     thread_state = THREAD_READY;
 }
@@ -192,6 +200,25 @@ void OS::exitCritical() {
     sei();
 }
 
+void OS::threadExit() {
+    OS::enterCritical();
+    threads[current_index].thread_state = THREAD_UNUSED;
+    OS::exitCritical();
+    Thread::yield();
+    while(1);
+}
+
+uint8_t OS::getActiveThreads() {
+    AtomicGuard guard;
+    uint8_t count = 0;
+    for (uint8_t i = 0; i < MAX_THREADS; i++) {
+        if (threads[i].thread_state != THREAD_UNUSED) {
+            count++;
+        }
+    }
+    return count;
+}
+
 /**
  * Realiza a troca de contexto (Scheduler).
  * 1. Salva o Stack Pointer da thread anterior.
@@ -221,12 +248,11 @@ void* OS::contextSwitch(void* oldSP) {
     for (uint8_t i = 0; i < MAX_THREADS; i++) {
         next = (next + 1) % MAX_THREADS;
 
-        if (threads[next].thread_state == THREAD_READY || 
-           (next == current_index && threads[next].thread_state == THREAD_RUNNING)) {
+        if (threads[next].thread_state == THREAD_READY || (next == current_index && threads[next].thread_state == THREAD_RUNNING)) {
             
             if (next != current_index) {
                 if (threads[current_index].thread_state == THREAD_RUNNING) {
-                     threads[current_index].thread_state = THREAD_READY;
+                    threads[current_index].thread_state = THREAD_READY;
                 }
                 threads[next].thread_state = THREAD_RUNNING;
                 current_index = next;

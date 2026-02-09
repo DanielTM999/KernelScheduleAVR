@@ -65,6 +65,7 @@ private:
     volatile static uint32_t sys_ticks;
 
     static Thread* newThreadInternal(void (*func)(void), uint8_t *stack_mem, uint16_t size);
+    static void threadExit();
 
 public:
     static uint32_t getTicks();
@@ -72,7 +73,7 @@ public:
 
     template <size_t N>
     static Thread* newThread(void (*func)(void), uint8_t (&stack_buffer)[N]) {return newThreadInternal(func, stack_buffer, N);}
-    
+    static uint8_t getActiveThreads();
     static void* contextSwitch(void* oldSP);
     static void init();
     static void enterCritical();
