@@ -21,10 +21,28 @@ Thread::Thread() {
 
 /**
  * Inicializa o contexto de uma nova thread.
- * Prepara a pilha (stack) simulando o frame de retorno de uma interrupção,
- * inserindo o endereço da função e o sentinela de verificação de stack.
- *
- * @param _id ID numérico da thread.
+ * Esta função prepara a memória da pilha simulando manualmente o estado que o
+ * processador teria se uma interrupção tivesse acabado de ocorrer. Isso permite
+ * que o escalonador execute um RETI para iniciar a thread.
+ * 
+ * para quem ver isso aqui a função faz o seguinte(ate para eu não me perder depois):
+ * A sequência de inicialização da pilha é:
+ * 1. Define base e tamanho da pilha para monitoramento.
+ * 2. Insere um byte sentinela (0xAA) no início da pilha para detectar Stack Overflow (como não tem MMU, é necessário detectar estouro manualmente).
+ * 3. Prepara o frame de execução no topo da memória alocada.
+ * 4. Empilha o endereço de retorno (threadExit) no fundo, garantindo que se a thread der 'return', ela pule para threadExit e limpe seu estado.
+ * 5. Empilha o endereço da função da thread (PC). Quando o RETI final acontecer, o processador usará este endereço para começar a execução.
+ * 6. Empilha o valor inicial de R0 (0x00). No assembly de troca de contexto, o R0 é o último registrador a ser restaurado (pop r0) antes do RETI.
+ * 7. Empilha o valor do SREG (0x80). O assembly usa um registrador temporário para ler isso da pilha e jogar no SREG, reabilitando as interrupções globais.
+ * 8. Preenche os registradores R1 até R31 com zeros (31 bytes). Isso limpa o contexto geral para evitar lixo de memória nos cálculos iniciais da thread.
+ * 9. Salva o ponteiro de pilha (SP) resultante na thread.
+ * 10. Define o estado da thread como READY, indicando que ela está pronta para o escalonador.
+ * 
+ * essa função é chamada internamente pelo método newThreadInternal da classe OS, que é responsável por encontrar um slot livre para a nova thread e chamar essa função de inicialização.
+ * alem de que esse é o principal metodo de configuração do contexto de execução da thread, garantindo que quando a thread for escalonada pela primeira vez, ela comece a executar a função correta e tenha um ambiente de execução limpo e controlado 
+ * ou seja se alguem for dar um fork tome cuidado com essa função aqui, se tiver erro aqui o controlador pode n fazer nada ou pior, corromper a pilha e causar comportamentos imprevisíveis.
+ * 
+ * @param _id ID numérico da thread(não faz nada pois o sistema não usa IDs devido a quantidade me memoria limitada a 2kb).
  * @param func Ponteiro para a função que a thread executará.
  * @param stack_mem Ponteiro para o array de memória da pilha.
  * @param size Tamanho da pilha em bytes.
@@ -44,8 +62,9 @@ void Thread::init(uint8_t _id, void (*func)(void), uint8_t *stack_mem, uint16_t 
     *sp-- = funcAddress & 0xFF;
     *sp-- = (funcAddress >> 8) & 0xFF;
 
+    *sp-- = 0;
     *sp-- = 0x80;
-    for (int i = 0; i < 32; i++) *sp-- = 0;
+    for (int i = 1; i < 32; i++) *sp-- = 0;
     stack_pointer = sp;
     thread_state = THREAD_READY;
 }
@@ -200,6 +219,11 @@ void OS::exitCritical() {
     sei();
 }
 
+/**
+ * Função chamada quando uma thread termina sua execução.
+ * Marca a thread como não utilizada e aciona o escalonador para escolher a próxima thread a ser executada.
+ * Esta função é colocada como endereço de retorno no frame de execução das threads, garantindo que quando uma thread terminar, ela chame esta função para limpar seu estado e permitir que o sistema não chame uma thread morta.
+ */
 void OS::threadExit() {
     OS::enterCritical();
     threads[current_index].thread_state = THREAD_UNUSED;
@@ -208,6 +232,9 @@ void OS::threadExit() {
     while(1);
 }
 
+/**
+ * Retorna o número de threads ativas (não UNUSED) no sistema.
+ */
 uint8_t OS::getActiveThreads() {
     AtomicGuard guard;
     uint8_t count = 0;
