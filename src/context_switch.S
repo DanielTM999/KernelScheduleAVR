@@ -2,14 +2,14 @@
 #include <avr/io.h>
 
 .global OS_yield_asm
-.global __vector_11  ; TIMER1 COMPA no UNO/NANO
+.global __vector_7  ; TIMER2 COMPA no UNO/NANO
 
 ; Função chamada manualmente (Yield)
 OS_yield_asm:
     rjmp SAVE_CONTEXT
 
 ; Interrupção do Timer (Preempção)
-__vector_11:
+__vector_7:
 SAVE_CONTEXT:
     ; 1. Salvar Registradores
     push r0

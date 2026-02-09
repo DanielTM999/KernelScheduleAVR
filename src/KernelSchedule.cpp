@@ -1,10 +1,10 @@
 #include "KernelSchedule.h"
 
-/* Configurações do Timer1 para o Time Slice do Scheduler */
-#define TIMER1_OCR1A 4999
-#define TIMER1_PRESCALER 64
-#define TIMER1_TICK_US ((TIMER1_PRESCALER * 1000000UL) / F_CPU)
-#define TIME_SLICE_MS (((TIMER1_OCR1A + 1) * TIMER1_TICK_US) / 1000)
+/* Configurações do Timer para o Time Slice do Scheduler */
+#define TIMER_OCRNA 255
+#define TIMER_PRESCALER 1024
+#define TIMER_TICK_US ((TIMER_PRESCALER * 1000000UL) / F_CPU)
+#define TIME_SLICE_MS (((TIMER_OCRNA + 1) * TIMER_TICK_US) / 1000)
 
 /* Alocação estática das threads e variáveis de controle do sistema */
 Thread OS::threads[MAX_THREADS];
@@ -186,20 +186,19 @@ Thread* OS::newThreadInternal(void (*func)(void), uint8_t *stack_mem, uint16_t s
  * Configura a Thread 0 como running e prepara a interrupção de tempo (tick).
  */
 void OS::init() {
-    pinMode(LED_BUILTIN, OUTPUT);
     sys_ticks = 0;
     current_index = 0;
     threads[0].thread_state = THREAD_RUNNING;
     threads[0].stack_base = nullptr;
     for (uint8_t i = 1; i < MAX_THREADS; i++) threads[i].thread_state = THREAD_UNUSED;
     cli();
-    TCCR1A = 0;
-    TCCR1B = 0;
-    TCNT1 = 0;
-    OCR1A = TIMER1_OCR1A;
-    TCCR1B |= (1 << WGM12);
-    TCCR1B |= (1 << CS11) | (1 << CS10);
-    TIMSK1 |= (1 << OCIE1A);
+    TCCR2A = 0;
+    TCCR2B = 0;
+    TCNT2  = 0;
+    OCR2A = TIMER_OCRNA;
+    TCCR2A |= (1 << WGM21);
+    TCCR2B |= (1 << CS22) | (1 << CS21) | (1 << CS20);
+    TIMSK2 |= (1 << OCIE2A);
     sei();
 }
 
