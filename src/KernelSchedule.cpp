@@ -1,7 +1,7 @@
 #include "KernelSchedule.h"
 
 /* Configurações do Timer para o Time Slice do Scheduler */
-#define TIMER_OCRNA 255
+#define TIMER_OCRNA 155
 #define TIMER_PRESCALER 1024
 #define TIMER_TICK_US ((TIMER_PRESCALER * 1000000UL) / F_CPU)
 #define TIME_SLICE_MS (((TIMER_OCRNA + 1) * TIMER_TICK_US) / 1000)
