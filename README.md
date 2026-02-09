@@ -1,122 +1,174 @@
-# KernelSchedule RTOS
+# KernelSchedule
 
-O KernelSchedule RTOS é um sistema operacional de tempo real preemptivo desenvolvido para microcontroladores AVR, com foco em baixo consumo de recursos e execução determinística. Ele implementa multitarefa baseada em fatias de tempo utilizando o Timer1 como fonte de interrupção periódica.
+KernelSchedule é uma biblioteca simples de escalonamento cooperativo
+para microcontroladores AVR (ex: Arduino UNO), permitindo criação de
+múltiplas threads leves com controle manual de stack e sincronização
+crítica.
 
-## Arquitetura Geral
+## Recursos
 
-O núcleo do sistema é composto por três estruturas principais:
+-   Threads preemptivas
+-   Sleep não bloqueante
+-   Controle de região crítica
+-   Atomic Guard
+-   Mutex
+-   Contagem de threads ativas
+-   Baixo consumo de memória
+-   Foco em sistemas embarcados
 
-- OS: responsável pelo gerenciamento global, escalonamento e controle do tempo.
-- Thread: representa uma tarefa executável com sua própria pilha e estado.
-- Mutex: fornece mecanismos de sincronização para acesso seguro a recursos compartilhados.
+------------------------------------------------------------------------
 
-O sistema utiliza um array fixo de threads, permitindo controle direto da memória e previsibilidade no uso de recursos.
+## Instalação
 
-## Modelo de Threads
+1.  Copie os arquivos da biblioteca para a pasta `libraries` do Arduino.
+2.  Inclua no projeto:
 
-Cada thread possui:
+``` cpp
+#include <KernelSchedule.h>
+```
 
-- Área de memória dedicada para pilha.
-- Ponteiro atual da pilha.
-- Estado de execução.
-- Tempo de despertar para operações de espera.
-- Mecanismo de verificação de integridade da stack através de um valor sentinela.
+------------------------------------------------------------------------
 
-Estados possíveis:
+## Exemplo Básico
 
-- UNUSED: posição livre.
-- READY: pronta para execução.
-- RUNNING: atualmente em execução.
-- BLOCKED: aguardando liberação de recurso.
-- SLEEP: suspensa até determinado tempo.
+``` cpp
+#include <KernelSchedule.h>
 
-## Inicialização da Thread
+uint8_t stackThread1[STACK_SIZE_SMALL];
 
-Durante a criação, a pilha é preparada manualmente com o endereço da função inicial e registradores zerados, permitindo que o contexto seja restaurado diretamente pelo mecanismo de troca de contexto.
+volatile int tempoSorteado = 0;
 
-Um byte canário é inserido no início da pilha para detectar corrupção ou overflow.
+void threadLimitedBlink();
 
-## Escalonador
+void setup() {
+  Serial.begin(9600);
+  pinMode(LED_BUILTIN, OUTPUT);
+  randomSeed(analogRead(0));
 
-O escalonador é baseado em round-robin com preempção por tempo.
+  OS::init();
+  OS::newThread(threadLimitedBlink, stackThread1);
+}
 
-Funcionamento:
+void loop() {
+  Serial.print("Threads Ativas: ");
+  Serial.print(OS::getActiveThreads());
 
-1. O contador global de ticks é incrementado a cada interrupção.
-2. Threads em estado de espera são verificadas e podem voltar ao estado READY.
-3. Caso não exista bloqueio atômico ativo, a próxima thread pronta é selecionada.
-4. A thread atual retorna para READY e a nova passa para RUNNING.
+  Serial.print(" | Ultimo Tempo Sorteado: ");
 
-Esse processo garante alternância contínua entre tarefas disponíveis.
+  OS::enterCritical();
+  int t = tempoSorteado;
+  OS::exitCritical();
 
-## Controle de Tempo
+  Serial.print(t);
+  Serial.println(" ms");
+}
 
-O Timer1 é configurado em modo de comparação para gerar interrupções periódicas. Cada interrupção representa um time slice do sistema, utilizado para:
+void threadLimitedBlink(){
+  for(int i = 0; i < 5; i++) {
+    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+    tempoSorteado = random(150, 3001);
+    Thread::sleep(tempoSorteado);
+  }
+}
+```
 
-- Atualizar o contador global de ticks.
-- Despertar threads em espera.
-- Executar o escalonador.
+------------------------------------------------------------------------
 
-## Troca de Contexto
+## Criando Threads
 
-O kernel salva e restaura o ponteiro de pilha da thread ativa durante a troca de contexto. Essa operação permite alternar entre múltiplas execuções sem perda de estado.
+``` cpp
+uint8_t stack[STACK_SIZE_SMALL];
+OS::newThread(minhaFuncao, stack);
+```
 
-## Sleep e Yield
+Cada thread precisa de um buffer de stack próprio.
 
-Uma thread pode suspender sua execução por um período definido, alterando seu estado para SLEEP e definindo o tempo de despertar.
+------------------------------------------------------------------------
 
-O método yield força a execução do escalonador sinalizando uma interrupção pendente.
+## Sleep da Thread
+
+``` cpp
+Thread::sleep(1000);
+```
+
+Suspende apenas a thread atual.
+
+------------------------------------------------------------------------
+
+## Região Crítica
+
+``` cpp
+OS::enterCritical();
+// acesso protegido
+OS::exitCritical();
+```
+
+Bloqueia interrupções ou troca de contexto durante uma seção crítica.
+Use apenas para trechos curtos.
+
+------------------------------------------------------------------------
+
+## Atomic Guard
+
+O Atomic Guard é uma forma segura e automática de proteger uma região
+crítica usando escopo.
+
+``` cpp
+{
+  AtomicGuard guard;
+  tempoSorteado++;
+}
+```
+
+Ao sair do escopo, a proteção é liberada automaticamente, evitando erros
+por esquecimento de `exitCritical`.
+
+------------------------------------------------------------------------
 
 ## Mutex
 
-O sistema possui um mecanismo simples de exclusão mútua:
+Mutex permite sincronização entre threads sem bloquear todo o sistema.
 
-- Quando livre, o mutex é adquirido pela thread atual.
-- Caso esteja ocupado, a thread é bloqueada e marcada como aguardando.
-- Ao liberar, a primeira thread em espera retorna ao estado READY.
+``` cpp
+Mutex mutex;
 
-Esse modelo evita acesso concorrente a recursos críticos.
+void thread1() {
+  mutex.lock();
+  // recurso compartilhado
+  mutex.unlock();
+}
 
-## Seções Críticas
+void thread2() {
+  mutex.lock();
+  // recurso compartilhado
+  mutex.unlock();
+}
+```
 
-# Deadlocks e Race Condition com Serial (UART)
+Use mutex quando múltiplas threads acessam o mesmo recurso por mais
+tempo.
 
-O uso da Serial (UART) exige atenção especial dentro do KernelSchedule, pois a comunicação serial depende de interrupções do hardware e pode afetar diretamente o escalonamento das threads.
+------------------------------------------------------------------------
 
-Evite utilizar chamadas de Serial dentro de regiões protegidas por AtomicGuard ou seções críticas longas. Como AtomicGuard impede a troca de contexto entre threads, qualquer operação mais demorada dentro dessa região fará com que as demais threads fiquem impedidas de executar, causando travamentos aparentes e perda de responsividade do sistema.
+## Threads Ativas
 
-Boas práticas recomendadas:
+``` cpp
+int total = OS::getActiveThreads();
+```
 
-- Utilize AtomicGuard apenas para alterações rápidas de estado ou variáveis compartilhadas.
-- Não execute Serial.print ou qualquer IO dentro de regiões atômicas.
-- Mantenha seções críticas extremamente curtas.
-- Caso múltiplas threads utilizem Serial, proteja apenas o acesso imediato com Mutex e libere rapidamente.
-- Prefira arquiteturas com escritor único e múltiplos leitores para reduzir necessidade de sincronização.
+------------------------------------------------------------------------
 
+## Observações
 
-O uso incorreto pode gerar starvation das demais tarefas, já que a thread atual continuará executando enquanto o escalonador estiver bloqueado.
+-   O sistema é preemptivo, porém evite loops infinitos sem `sleep` para
+    facilitar a troca de contexto.
+-   Atomic Guard é indicado para trechos muito curtos.
+-   Mutex é indicado para recursos compartilhados mais complexos.
+-   Sempre forneça stacks suficientes para cada thread.
+-   Ideal para sistemas com pouca memória.
 
-Esse modelo mantém o sistema simples, previsível e eficiente dentro das limitações de microcontroladores AVR.
+------------------------------------------------------------------------
 
+## Licença
 
-## Verificação de Stack
-
-Cada thread possui verificação de integridade baseada em um valor sentinela inserido no início da pilha. Caso o valor seja alterado, indica possível overflow ou corrupção de memória.
-
-## Inicialização do Sistema
-
-Na inicialização:
-
-- O contador de ticks é zerado.
-- A thread principal é marcada como RUNNING.
-- As demais posições são definidas como UNUSED.
-- O Timer1 é configurado e as interrupções são habilitadas.
-
-## Objetivos de Design
-
-- Determinismo em tempo real.
-- Baixo uso de memória RAM.
-- Troca de contexto eficiente.
-- Integração direta com Arduino AVR.
-- Simplicidade estrutural sem dependências externas.
-
+Uso livre para estudos e projetos embarcados.
