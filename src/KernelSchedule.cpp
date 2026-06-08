@@ -100,6 +100,28 @@ void Thread::sleep(uint32_t ms) {
 }
 
 /**
+ * Verifica se a thread atual está marcada como THREAD_SLEEP.
+ *
+ * Esta função NÃO desabilita interrupções e NÃO coloca a thread para dormir.
+ * Ela apenas consulta o estado da thread atual.
+ *
+ * No modelo deste kernel, essa verificação é usada principalmente pela
+ * thread sintética 0, que funciona como fallback quando nenhuma thread de
+ * usuário está pronta para executar.
+ *
+ * Quando todas as threads reais estão dormindo, o escalonador pode manter
+ * ou retornar para a thread 0. Nesse caso, o código associado à thread
+ * sintética pode usar isSleep() para decidir se deve executar o loop normal
+ * ou se deve apenas aguardar o próximo tick/interrupção do timer.
+ *
+ * @return true se a thread atual estiver em THREAD_SLEEP, false caso contrário.
+ */
+bool Thread::isSleep(){
+    Thread* t = OS::getCurrentThread();
+    return t->thread_state == THREAD_SLEEP;
+}
+
+/**
  * Cede voluntariamente o processador para a próxima thread (Yield).
  * Aciona a troca de contexto via Assembly.
  */

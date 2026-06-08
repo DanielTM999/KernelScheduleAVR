@@ -38,6 +38,7 @@ private:
 public:
     Thread();
     static void sleep(uint32_t ms);
+    static bool isSleep();
     static void yield();
     static bool isCorrupted();
 };
