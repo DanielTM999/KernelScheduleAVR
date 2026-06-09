@@ -61,11 +61,17 @@ class OS {
     friend class AtomicGuard;
 
 private:
+    static const uint8_t CURRENT_INDEX_MASK = 0b01111111;
+    static const uint8_t CONTEXT_SWITCH_LOCK_BIT = 0b10000000;
     static Thread threads[MAX_THREADS];
+    // O bit 7 bloqueia a troca de thread; os demais bits guardam o indice.
     volatile static uint8_t current_index;
     volatile static uint32_t sys_ticks;
     static uint32_t tick_fraction;
 
+    static inline uint8_t currentThreadIndex() {
+        return current_index & CURRENT_INDEX_MASK;
+    }
     static Thread* newThreadInternal(void (*func)(void), uint8_t *stack_mem, uint16_t size);
     static void threadExit();
 

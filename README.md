@@ -103,8 +103,9 @@ OS::enterCritical();
 OS::exitCritical();
 ```
 
-Bloqueia interrupções ou troca de contexto durante uma seção crítica.
-Use apenas para trechos curtos.
+Bloqueia somente a troca de contexto durante uma seção crítica. As
+interrupções continuam habilitadas, inclusive as dos timers 0, 1 e 2.
+Use apenas para trechos curtos e não aninhe chamadas a `enterCritical()`.
 
 ------------------------------------------------------------------------
 

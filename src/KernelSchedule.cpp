@@ -141,7 +141,7 @@ void Mutex::lock() {
         uint8_t previous_sreg = SREG;
         cli();
 
-        uint8_t current = OS::current_index;
+        uint8_t current = OS::currentThreadIndex();
         if (!locked) {
             locked = true;
             owner_index = current;
@@ -164,7 +164,7 @@ void Mutex::lock() {
 void Mutex::unlock() {
     uint8_t previous_sreg = SREG;
     cli();
-    if (owner_index == OS::current_index) {
+    if (owner_index == OS::currentThreadIndex()) {
         locked = false;
         owner_index = -1;
         if (waiting_mask != 0) {
@@ -195,7 +195,7 @@ uint32_t OS::getTicks() {
  * @return Ponteiro para o objeto Thread atual.
  */
 Thread* OS::getCurrentThread() {
-    return &threads[current_index];
+    return &threads[currentThreadIndex()];
 }
 
 /**
@@ -239,18 +239,21 @@ void OS::init() {
 }
 
 /**
- * Entra em uma seção crítica do código.
- * Desabilita interrupções globais.
+ * Entra em uma seção crítica do escalonador.
+ * Bloqueia a troca de thread, mas mantém as interrupções habilitadas.
  */
 void OS::enterCritical() {
     cli();
+    current_index |= CONTEXT_SWITCH_LOCK_BIT;
+    sei();
 }
 
 /**
- * Sai de uma seção crítica do código.
- * Habilita interrupções globais.
+ * Sai de uma seção crítica do escalonador e libera a troca de thread.
  */
 void OS::exitCritical() {
+    cli();
+    current_index &= CURRENT_INDEX_MASK;
     sei();
 }
 
@@ -261,7 +264,7 @@ void OS::exitCritical() {
  */
 void OS::threadExit() {
     OS::enterCritical();
-    threads[current_index].thread_state = THREAD_UNUSED;
+    threads[currentThreadIndex()].thread_state = THREAD_UNUSED;
     OS::exitCritical();
     Thread::yield();
     while(1);
@@ -294,7 +297,8 @@ uint8_t OS::getActiveThreads() {
  * @return Novo ponteiro de pilha para a CPU carregar.
  */
 void* OS::contextSwitch(void* oldSP, bool timer_tick) {
-    threads[current_index].stack_pointer = (uint8_t*)oldSP;
+    uint8_t current = currentThreadIndex();
+    threads[current].stack_pointer = (uint8_t*)oldSP;
 
     if (timer_tick) {
         uint32_t elapsed = tick_fraction + TIMER_MILLISECOND_UNITS;
@@ -310,15 +314,19 @@ void* OS::contextSwitch(void* oldSP, bool timer_tick) {
         }
     }
 
-    uint8_t next = current_index;
+    if (current_index & CONTEXT_SWITCH_LOCK_BIT) {
+        return threads[current].stack_pointer;
+    }
+
+    uint8_t next = current;
     for (uint8_t i = 0; i < MAX_THREADS; i++) {
         next = (next + 1) % MAX_THREADS;
 
-        if (threads[next].thread_state == THREAD_READY || (next == current_index && threads[next].thread_state == THREAD_RUNNING)) {
+        if (threads[next].thread_state == THREAD_READY || (next == current && threads[next].thread_state == THREAD_RUNNING)) {
             
-            if (next != current_index) {
-                if (threads[current_index].thread_state == THREAD_RUNNING) {
-                    threads[current_index].thread_state = THREAD_READY;
+            if (next != current) {
+                if (threads[current].thread_state == THREAD_RUNNING) {
+                    threads[current].thread_state = THREAD_READY;
                 }
                 threads[next].thread_state = THREAD_RUNNING;
                 current_index = next;
@@ -327,7 +335,7 @@ void* OS::contextSwitch(void* oldSP, bool timer_tick) {
         }
     }
 
-    return threads[current_index].stack_pointer;
+    return threads[currentThreadIndex()].stack_pointer;
 }
 
 /**
