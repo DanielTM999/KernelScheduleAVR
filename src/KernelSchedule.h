@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 
+#define STACK_SIZE_TINY 64
 #define STACK_SIZE_SMALL 128
 #define STACK_SIZE_MEDIUM 256
 #define STACK_SIZE_LARGE 512

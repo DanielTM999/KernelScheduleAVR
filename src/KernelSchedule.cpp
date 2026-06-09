@@ -367,10 +367,13 @@ void* OS::contextSwitch(void* oldSP, bool timer_tick) {
     }
 
     uint8_t next = current;
+    bool found = false;
     for (uint8_t i = 0; i < MAX_THREADS; i++) {
         next = (next + 1) % MAX_THREADS;
 
         if (threads[next].thread_state == THREAD_READY || (next == current && threads[next].thread_state == THREAD_RUNNING)) {
+            
+            found = true;
             
             if (next != current) {
                 if (threads[current].thread_state == THREAD_RUNNING) {
@@ -381,6 +384,13 @@ void* OS::contextSwitch(void* oldSP, bool timer_tick) {
             }
             break;
         }
+        
+    }
+    
+    
+    if (!found) {
+        current_index = 0;
+        threads[0].thread_state = THREAD_RUNNING;
     }
 
     return threads[currentThreadIndex()].stack_pointer;
