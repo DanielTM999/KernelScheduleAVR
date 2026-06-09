@@ -16,7 +16,7 @@
 #define MAX_THREADS 3
 
 extern "C" void OS_yield_asm(); 
-extern "C" void* OS_contextSwitch_Wrapper(void* oldSP);
+extern "C" void* OS_contextSwitch_Wrapper(void* oldSP, uint8_t timer_tick);
 
 class OS;
 class Thread;
@@ -64,6 +64,7 @@ private:
     static Thread threads[MAX_THREADS];
     volatile static uint8_t current_index;
     volatile static uint32_t sys_ticks;
+    static uint32_t tick_fraction;
 
     static Thread* newThreadInternal(void (*func)(void), uint8_t *stack_mem, uint16_t size);
     static void threadExit();
@@ -75,7 +76,7 @@ public:
     template <size_t N>
     static Thread* newThread(void (*func)(void), uint8_t (&stack_buffer)[N]) {return newThreadInternal(func, stack_buffer, N);}
     static uint8_t getActiveThreads();
-    static void* contextSwitch(void* oldSP);
+    static void* contextSwitch(void* oldSP, bool timer_tick);
     static void init();
     static void enterCritical();
     static void exitCritical();
@@ -88,4 +89,3 @@ public:
 };
 
 #endif
-

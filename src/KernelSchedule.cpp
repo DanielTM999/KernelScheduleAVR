@@ -2,14 +2,15 @@
 
 /* Configurações do Timer para o Time Slice do Scheduler */
 #define TIMER_OCRNA 155
-#define TIMER_PRESCALER 1024
-#define TIMER_TICK_US ((TIMER_PRESCALER * 1000000UL) / F_CPU)
-#define TIME_SLICE_MS (((TIMER_OCRNA + 1) * TIMER_TICK_US) / 1000)
+#define TIMER_PRESCALER 1024UL
+#define TIMER_CYCLES (((uint32_t)TIMER_OCRNA + 1UL) * TIMER_PRESCALER)
+#define TIMER_MILLISECOND_UNITS (TIMER_CYCLES * 1000UL)
 
 /* Alocação estática das threads e variáveis de controle do sistema */
 Thread OS::threads[MAX_THREADS];
 volatile uint8_t OS::current_index = 0;
 volatile uint32_t OS::sys_ticks = 0;
+uint32_t OS::tick_fraction = 0;
 
 /**
  * Construtor padrão da classe Thread.
@@ -91,11 +92,12 @@ bool Thread::isCorrupted() {
  * @param ms Tempo em milissegundos para dormir.
  */
 void Thread::sleep(uint32_t ms) {
+    uint8_t previous_sreg = SREG;
     cli();
     Thread* t = OS::getCurrentThread();
-    t->wake_time = OS::getTicks() + ms;
+    t->wake_time = OS::sys_ticks + ms;
     t->thread_state = THREAD_SLEEP;
-    sei();
+    SREG = previous_sreg;
     Thread::yield();
 }
 
@@ -135,15 +137,21 @@ void Thread::yield() {
  * e aguarda até que ele seja liberado.
  */
 void Mutex::lock() {
-    cli();
-    if (!locked) {
-        locked = true;
-        owner_index = OS::current_index;
-        sei();
-    } else {
-        OS::getCurrentThread()->thread_state = THREAD_BLOCKED;
-        waiting_mask |= (1 << OS::current_index);
-        sei();
+    while (true) {
+        uint8_t previous_sreg = SREG;
+        cli();
+
+        uint8_t current = OS::current_index;
+        if (!locked) {
+            locked = true;
+            owner_index = current;
+            SREG = previous_sreg;
+            return;
+        }
+
+        OS::threads[current].thread_state = THREAD_BLOCKED;
+        waiting_mask |= (uint8_t)(1U << current);
+        SREG = previous_sreg;
         Thread::yield();
     }
 }
@@ -154,17 +162,18 @@ void Mutex::lock() {
  * é acordada e colocada em estado READY.
  */
 void Mutex::unlock() {
+    uint8_t previous_sreg = SREG;
     cli();
     if (owner_index == OS::current_index) {
         locked = false;
         owner_index = -1;
         if (waiting_mask != 0) {
             uint8_t next_thread = __builtin_ctz(waiting_mask);
-            waiting_mask &= ~(1 << next_thread);
+            waiting_mask &= (uint8_t)~(1U << next_thread);
             OS::threads[next_thread].thread_state = THREAD_READY;
         }
     }
-    sei();
+    SREG = previous_sreg;
 }
 
 /**
@@ -173,7 +182,11 @@ void Mutex::unlock() {
  * @return Número de ticks (em ms) desde a inicialização do OS.
  */
 uint32_t OS::getTicks() {
-    return sys_ticks;
+    uint8_t previous_sreg = SREG;
+    cli();
+    uint32_t ticks = sys_ticks;
+    SREG = previous_sreg;
+    return ticks;
 }
 
 /**
@@ -204,11 +217,12 @@ Thread* OS::newThreadInternal(void (*func)(void), uint8_t *stack_mem, uint16_t s
 }
 
 /**
- * Inicializa o Kernel e o Timer1.
+ * Inicializa o Kernel e o Timer2.
  * Configura a Thread 0 como running e prepara a interrupção de tempo (tick).
  */
 void OS::init() {
     sys_ticks = 0;
+    tick_fraction = 0;
     current_index = 0;
     threads[0].thread_state = THREAD_RUNNING;
     threads[0].stack_base = nullptr;
@@ -276,17 +290,21 @@ uint8_t OS::getActiveThreads() {
  * 5. Retorna o Stack Pointer da nova thread para o Assembly.
  *
  * @param oldSP Ponteiro de pilha da thread que estava rodando antes da interrupção.
+ * @param timer_tick true quando a troca foi iniciada pela interrupção do Timer2.
  * @return Novo ponteiro de pilha para a CPU carregar.
  */
-void* OS::contextSwitch(void* oldSP) {
-    int contagem = 0;
+void* OS::contextSwitch(void* oldSP, bool timer_tick) {
     threads[current_index].stack_pointer = (uint8_t*)oldSP;
-    
-    sys_ticks += TIME_SLICE_MS;
+
+    if (timer_tick) {
+        uint32_t elapsed = tick_fraction + TIMER_MILLISECOND_UNITS;
+        sys_ticks += elapsed / F_CPU;
+        tick_fraction = elapsed % F_CPU;
+    }
 
     for (uint8_t i = 0; i < MAX_THREADS; i++) {
         if (threads[i].thread_state == THREAD_SLEEP) {
-            if (sys_ticks >= threads[i].wake_time) {
+            if ((int32_t)(sys_ticks - threads[i].wake_time) >= 0) {
                 threads[i].thread_state = THREAD_READY;
             }
         }
@@ -316,6 +334,6 @@ void* OS::contextSwitch(void* oldSP) {
  * Wrapper com linkage "C" para ser chamado pelo código Assembly (ISR).
  * Redireciona a chamada para o método estático C++ do Kernel.
  */
-extern "C" void* OS_contextSwitch_Wrapper(void* oldSP) {
-    return OS::contextSwitch(oldSP);
+extern "C" void* OS_contextSwitch_Wrapper(void* oldSP, uint8_t timer_tick) {
+    return OS::contextSwitch(oldSP, timer_tick != 0);
 }
