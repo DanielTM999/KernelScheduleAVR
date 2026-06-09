@@ -375,13 +375,12 @@ void* OS::contextSwitch(void* oldSP, bool timer_tick) {
             
             found = true;
             
-            if (next != current) {
-                if (threads[current].thread_state == THREAD_RUNNING) {
-                    threads[current].thread_state = THREAD_READY;
-                }
-                threads[next].thread_state = THREAD_RUNNING;
-                current_index = next;
+            if (next != current && threads[current].thread_state == THREAD_RUNNING) {
+                threads[current].thread_state = THREAD_READY;
             }
+
+            threads[next].thread_state = THREAD_RUNNING;
+            current_index = next;
             break;
         }
         
@@ -390,7 +389,6 @@ void* OS::contextSwitch(void* oldSP, bool timer_tick) {
     
     if (!found) {
         current_index = 0;
-        threads[0].thread_state = THREAD_RUNNING;
     }
 
     return threads[currentThreadIndex()].stack_pointer;
