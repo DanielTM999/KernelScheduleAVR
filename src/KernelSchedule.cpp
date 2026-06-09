@@ -5,12 +5,15 @@
 #define TIMER_PRESCALER 1024UL
 #define TIMER_CYCLES (((uint32_t)TIMER_OCRNA + 1UL) * TIMER_PRESCALER)
 #define TIMER_MILLISECOND_UNITS (TIMER_CYCLES * 1000UL)
+#define TIMER_WHOLE_MILLISECONDS (TIMER_MILLISECOND_UNITS / F_CPU)
+#define TIMER_FRACTION_STEP ((TIMER_MILLISECOND_UNITS % F_CPU) / TIMER_FRACTION_DIVISOR)
+#define TIMER_FRACTION_SCALE (F_CPU / TIMER_FRACTION_DIVISOR)
 
 /* Alocação estática das threads e variáveis de controle do sistema */
 Thread OS::threads[MAX_THREADS];
 volatile uint8_t OS::current_index = 0;
 volatile uint32_t OS::sys_ticks = 0;
-uint32_t OS::tick_fraction = 0;
+OS::TimerFraction OS::tick_fraction = 0;
 
 /**
  * Construtor padrão da classe Thread.
@@ -43,14 +46,12 @@ Thread::Thread() {
  * alem de que esse é o principal metodo de configuração do contexto de execução da thread, garantindo que quando a thread for escalonada pela primeira vez, ela comece a executar a função correta e tenha um ambiente de execução limpo e controlado 
  * ou seja se alguem for dar um fork tome cuidado com essa função aqui, se tiver erro aqui o controlador pode n fazer nada ou pior, corromper a pilha e causar comportamentos imprevisíveis.
  * 
- * @param _id ID numérico da thread(não faz nada pois o sistema não usa IDs devido a quantidade me memoria limitada a 2kb).
  * @param func Ponteiro para a função que a thread executará.
  * @param stack_mem Ponteiro para o array de memória da pilha.
  * @param size Tamanho da pilha em bytes.
  */
-void Thread::init(uint8_t _id, void (*func)(void), uint8_t *stack_mem, uint16_t size) {
+void Thread::init(void (*func)(void), uint8_t *stack_mem, uint16_t size) {
     stack_base = stack_mem;
-    stack_size = size;
     stack_mem[0] = 0xAA;
     uint8_t *sp = &stack_mem[size - 1];
 
@@ -209,7 +210,7 @@ Thread* OS::getCurrentThread() {
 Thread* OS::newThreadInternal(void (*func)(void), uint8_t *stack_mem, uint16_t size) {
     for (uint8_t i = 1; i < MAX_THREADS; i++) {
         if (threads[i].thread_state == THREAD_UNUSED) {
-            threads[i].init(i, func, stack_mem, size);
+            threads[i].init(func, stack_mem, size);
             return &threads[i];
         }
     }
@@ -301,9 +302,16 @@ void* OS::contextSwitch(void* oldSP, bool timer_tick) {
     threads[current].stack_pointer = (uint8_t*)oldSP;
 
     if (timer_tick) {
-        uint32_t elapsed = tick_fraction + TIMER_MILLISECOND_UNITS;
-        sys_ticks += elapsed / F_CPU;
-        tick_fraction = elapsed % F_CPU;
+        sys_ticks += TIMER_WHOLE_MILLISECONDS;
+        if (TIMER_FRACTION_STEP != 0) {
+            const TimerFraction carry_threshold = TIMER_FRACTION_SCALE - TIMER_FRACTION_STEP;
+            if (tick_fraction >= carry_threshold) {
+                tick_fraction -= carry_threshold;
+                sys_ticks++;
+            } else {
+                tick_fraction += TIMER_FRACTION_STEP;
+            }
+        }
     }
 
     for (uint8_t i = 0; i < MAX_THREADS; i++) {

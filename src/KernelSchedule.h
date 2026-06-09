@@ -30,10 +30,9 @@ class Thread {
 private:
     uint8_t *stack_pointer;
     uint8_t *stack_base;
-    uint16_t stack_size;
     uint32_t wake_time;
     uint8_t thread_state;
-    void init(uint8_t _id, void (*func)(void), uint8_t *stack_mem, uint16_t size);
+    void init(void (*func)(void), uint8_t *stack_mem, uint16_t size);
 
 public:
     Thread();
@@ -67,7 +66,21 @@ private:
     // O bit 7 bloqueia a troca de thread; os demais bits guardam o indice.
     volatile static uint8_t current_index;
     volatile static uint32_t sys_ticks;
-    static uint32_t tick_fraction;
+
+#if (F_CPU % 128000UL) == 0 && (F_CPU / 128000UL) <= UINT8_MAX
+    typedef uint8_t TimerFraction;
+    enum : uint32_t { TIMER_FRACTION_DIVISOR = 128000UL };
+#elif (F_CPU % 64000UL) == 0 && (F_CPU / 64000UL) <= UINT8_MAX
+    typedef uint8_t TimerFraction;
+    enum : uint32_t { TIMER_FRACTION_DIVISOR = 64000UL };
+#elif (F_CPU % 8000UL) == 0 && (F_CPU / 8000UL) <= UINT16_MAX
+    typedef uint16_t TimerFraction;
+    enum : uint32_t { TIMER_FRACTION_DIVISOR = 8000UL };
+#else
+    typedef uint32_t TimerFraction;
+    enum : uint32_t { TIMER_FRACTION_DIVISOR = 1UL };
+#endif
+    static TimerFraction tick_fraction;
 
     static inline uint8_t currentThreadIndex() {
         return current_index & CURRENT_INDEX_MASK;
