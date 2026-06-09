@@ -106,16 +106,14 @@ void Thread::sleep(uint32_t ms) {
  * Verifica se a thread atual está marcada como THREAD_SLEEP.
  *
  * Esta função NÃO desabilita interrupções e NÃO coloca a thread para dormir.
- * Ela apenas consulta o estado da thread atual.
+ * Ela apenas consulta o estado lógico da thread atual.
  *
- * No modelo deste kernel, essa verificação é usada principalmente pela
- * thread sintética 0, que funciona como fallback quando nenhuma thread de
- * usuário está pronta para executar.
+ * Quando todas as threads estão dormindo, o escalonador pode manter
+ * o contexto da thread anterior executando até o próximo tick/interrupção
+ * do timer, mesmo que essa thread ainda esteja marcada como THREAD_SLEEP.
  *
- * Quando todas as threads reais estão dormindo, o escalonador pode manter
- * ou retornar para a thread 0. Nesse caso, o código associado à thread
- * sintética pode usar isSleep() para decidir se deve executar o loop normal
- * ou se deve apenas aguardar o próximo tick/interrupção do timer.
+ * Nesse cenário, o código da thread pode usar isSleep() para decidir
+ * se deve executar seu fluxo normal ou apenas aguardar a próxima preempção.
  *
  * @return true se a thread atual estiver em THREAD_SLEEP, false caso contrário.
  */
@@ -130,6 +128,48 @@ bool Thread::isSleep(){
  */
 void Thread::yield() {
     OS_yield_asm();
+}
+
+/**
+ * Retorna o número de threads em estado READY.
+ *
+ * Conta apenas threads prontas para serem escalonadas.
+ * Não conta THREAD_RUNNING, THREAD_SLEEP, THREAD_BLOCKED ou THREAD_UNUSED.
+ *
+ * @return Quantidade de threads em THREAD_READY.
+ */
+uint8_t OS::getReadyThreadCount() {
+    AtomicGuard guard;
+
+    uint8_t count = 0;
+
+    for (uint8_t i = 0; i < MAX_THREADS; i++) {
+        if (threads[i].thread_state == THREAD_READY) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+/**
+ * Verifica se existe pelo menos uma thread em estado READY.
+ *
+ * Útil para saber se a thread atual pode dormir sem deixar o kernel
+ * sem nenhuma outra thread pronta para executar.
+ *
+ * @return true se existir pelo menos uma thread READY, false caso contrário.
+ */
+bool OS::hasReadyThread() {
+    AtomicGuard guard;
+
+    for (uint8_t i = 0; i < MAX_THREADS; i++) {
+        if (threads[i].thread_state == THREAD_READY) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**

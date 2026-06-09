@@ -99,6 +99,8 @@ public:
     static void init();
     static void enterCritical();
     static void exitCritical();
+    static uint8_t getReadyThreadCount();
+    static bool hasReadyThread();
 };
 
 class AtomicGuard {
